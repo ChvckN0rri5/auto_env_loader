@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=42"] # Specifies setuptools requirement
+build-backend = "setuptools.build_meta" # Specifies setuptools as the build backend
+
+[project]
+name = "auto_env_loader"
+version = "0.1.0"
+authors = [
+  # Assuming no email provided in setup.py, add it if available
+  { name="ChvckN0rri5" },
+]
+description = "A simple package to automatically load .env files into accessible environment variables."
+readme = "README.md" # Reads long description from README.md
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+# No runtime dependencies specified in setup.py
+# dependencies = []
+
+# Project URLs derived from setup.py's url field
+[project.urls]
+"Homepage" = "https://github.com/ChvckN0rri5/auto_env_loader"
+
+# Setuptools will automatically find packages in the standard layout.
+# If your structure was non-standard, you might need:
+# [tool.setuptools.packages.find]
+# where = ["."] # or your source directory, e.g., "src"
