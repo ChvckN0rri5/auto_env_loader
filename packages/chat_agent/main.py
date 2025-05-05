@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from dotenv import load_dotenv
 from typing import List, Literal, Optional
 
@@ -22,7 +23,7 @@ load_dotenv()
 TAVILAY_API_KEY = os.getenv("TAVILAY_API_KEY")
 MAX_RESULTS = os.getenv("MAX_RESULTS")
 
-recall_vector_store = InMemoryVectorStore(OllamaEmbeddings())
+recall_vector_store = InMemoryVectorStore(OllamaEmbeddings(model="granite-embedding:278m-fp16"))
 
 import uuid
 
@@ -71,7 +72,7 @@ prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are a helpful assistant with advanced long-term memory"
+            " You are a helpful assistant with advanced long-term memory"
             " capabilities. Powered by a stateless LLM, you must rely on"
             " external memory to store information between conversations."
             " Utilize the available memory tools to store and retrieve"
@@ -117,13 +118,11 @@ prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
-model = ChatOllama(model="qwen3:4b",
+model = ChatOllama(model=os.getenv("CHAT_MODEL"),
                    temperature=0.3
                    )
 
 model_with_tools = model.bind_tools(tools)
-
-tokenizer = tiktoken.encoding_for_model("") 
 
 
 def agent(state: State) -> State:
@@ -161,7 +160,6 @@ def load_memories(state: State, config: RunnableConfig) -> State:
         State: The updated state with loaded memories.
     """
     convo_str = get_buffer_string(state["messages"])
-    convo_str = tokenizer.decode(tokenizer.encode(convo_str)[:2048])
     recall_memories = search_recall_memories.invoke(convo_str, config)
     return {
         "recall_memories": recall_memories,
@@ -182,3 +180,105 @@ def route_tools(state: State):
         return "tools"
 
     return END
+
+# Create the graph and add nodes
+builder = StateGraph(State)
+builder.add_node(load_memories)
+builder.add_node(agent)
+builder.add_node("tools", ToolNode(tools))
+
+# Add edges to the graph
+builder.add_edge(START, "load_memories")
+builder.add_edge("load_memories", "agent")
+builder.add_conditional_edges("agent", route_tools, ["tools", END])
+builder.add_edge("tools", "agent")
+
+# Compile the graph
+memory = MemorySaver()
+graph = builder.compile(checkpointer=memory)
+
+def pretty_print_stream_chunk(chunk):
+    for node, updates in chunk.items():
+        print(f"Update from node: {node}")
+        if "messages" in updates:
+            updates["messages"][-1].pretty_print()
+        else:
+            print(updates)
+
+        print("\n")
+
+def stream_and_clean_output(stream_generator):
+    """
+    Streams output, buffering and discarding content within <think>...</think> tags.
+    Prints "Thinking..." until </think> is found or stream ends.
+    """
+    print("Thinking... ", end="", flush=True) # Display thinking message
+    buffered_output = ""
+    in_thinking_block = False
+    thinking_message_cleared = False
+
+    for chunk in stream_generator:
+        # Check if the chunk contains a message from the 'agent' node
+        if 'agent' in chunk and 'messages' in chunk['agent'] and chunk['agent']['messages']:
+            message_content = chunk['agent']['messages'][-1].content
+
+            # Process the content chunk by chunk
+            i = 0
+            while i < len(message_content):
+                if not in_thinking_block:
+                    # Look for the start of a thinking block
+                    start_tag_index = message_content.find('<think>', i)
+
+                    if start_tag_index != -1:
+                        # Print content before the <think> tag
+                        print(message_content[i:start_tag_index], end="", flush=True)
+                        in_thinking_block = True
+                        i = start_tag_index + len('<think>')
+                        # Start buffering
+                        buffered_output = "" # Clear buffer for new thinking block
+                    else:
+                        # No <think> tag, print the rest of the content
+                        print(message_content[i:], end="", flush=True)
+                        i = len(message_content)
+                else: # We are currently inside a thinking block
+                    # Look for the end of a thinking block
+                    end_tag_index = message_content.find('</think>', i)
+
+                    if end_tag_index != -1:
+                        # Add content up to </think> to buffer (will be discarded)
+                        buffered_output += message_content[i:end_tag_index]
+                        in_thinking_block = False
+                        i = end_tag_index + len('</think>')
+
+                        # Clear the "Thinking..." message once </think> is found
+                        if not thinking_message_cleared:
+                             print("\r" + " " * 20 + "\r", end="", flush=True) # Clear "Thinking..."
+                             thinking_message_cleared = True
+
+                        # Discard buffered_output
+                        buffered_output = ""
+
+                        # Continue processing the rest of the current chunk (content after </think>)
+                    else:
+                        # </think> not found in this chunk, buffer the whole rest of the chunk
+                        buffered_output += message_content[i:]
+                        i = len(message_content)
+
+    # After the loop, ensure the thinking message is cleared if it wasn't already
+    if not thinking_message_cleared:
+         print("\r" + " " * 20 + "\r", end="", flush=True) # Clear "Thinking..."
+
+    print("\n", end="", flush=True) # Ensure a newline at the end
+
+# NOTE: we're specifying `user_id` to save memories for a given user
+config = {"configurable": {"user_id": "1", "thread_id": "1"}}
+
+stream_and_clean_output(graph.stream({"messages": [("user", "What's up dude! My name is John")]}, config=config))
+stream_and_clean_output(graph.stream({"messages": [("user", "Yo! What is my name?")]}, config=config))
+stream_and_clean_output(graph.stream({"messages": [("user", "What is my favorite color bro?")]}, config=config))
+
+# for chunk in graph.stream({"messages": [("user", "my name is John")]}, config=config):
+#     pretty_print_stream_chunk(chunk)
+
+# for chunk in graph.stream({"messages": [("user", "What is my name?")]}, config=config):
+#     pretty_print_stream_chunk(chunk)
