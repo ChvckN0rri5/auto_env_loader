@@ -23,7 +23,7 @@ load_dotenv()
 TAVILAY_API_KEY = os.getenv("TAVILAY_API_KEY")
 MAX_RESULTS = os.getenv("MAX_RESULTS")
 
-recall_vector_store = InMemoryVectorStore(OllamaEmbeddings(model="granite-embedding:278m-fp16"))
+recall_vector_store = InMemoryVectorStore(OllamaEmbeddings(model="nomic-embed-text:latest"))
 
 import uuid
 
@@ -79,8 +79,8 @@ prompt = ChatPromptTemplate.from_messages(
             " important details that will help you better attend to the user's"
             " needs and understand their context.\n\n"
             "Memory Usage Guidelines:\n"
-            "1. Actively use memory tools (save_core_memory, save_recall_memory)"
-            " to build a comprehensive understanding of the user.\n"
+            "1. You MUST actively use memory tools (save_core_memory, save_recall_memory)"
+            " to build a comprehensive understanding of the user. It must include all personal details of the user.\n"
             "2. Make informed suppositions and extrapolations based on stored"
             " memories.\n"
             "3. Regularly reflect on past interactions to identify patterns and"
@@ -273,12 +273,18 @@ def stream_and_clean_output(stream_generator):
 # NOTE: we're specifying `user_id` to save memories for a given user
 config = {"configurable": {"user_id": "1", "thread_id": "1"}}
 
-stream_and_clean_output(graph.stream({"messages": [("user", "What's up dude! My name is John")]}, config=config))
-stream_and_clean_output(graph.stream({"messages": [("user", "Yo! What is my name?")]}, config=config))
-stream_and_clean_output(graph.stream({"messages": [("user", "What is my favorite color bro?")]}, config=config))
+# stream_and_clean_output(graph.stream({"messages": [("user", "What's up dude! My name is John")]}, config=config))
+# stream_and_clean_output(graph.stream({"messages": [("user", "Yo! What is my name?")]}, config=config))
+# stream_and_clean_output(graph.stream({"messages": [("user", "What is my favorite color bro?")]}, config=config))
 
-# for chunk in graph.stream({"messages": [("user", "my name is John")]}, config=config):
-#     pretty_print_stream_chunk(chunk)
+for chunk in graph.stream({"messages": [("user", "my name is John")]}, config=config):
+    pretty_print_stream_chunk(chunk)
 
-# for chunk in graph.stream({"messages": [("user", "What is my name?")]}, config=config):
-#     pretty_print_stream_chunk(chunk)
+for chunk in graph.stream({"messages": [("user", "What is my name?")]}, config=config):
+    pretty_print_stream_chunk(chunk)
+
+for chunk in graph.stream({"messages": [("user", "What is my favorite color bro?")]}, config=config):
+    pretty_print_stream_chunk(chunk)
+
+for chunk in graph.stream({"messages": [("user", "When is the next NHL scheduled game for the Nashville Preditors?")]}, config=config):
+    pretty_print_stream_chunk(chunk)
